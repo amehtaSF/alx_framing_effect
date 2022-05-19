@@ -1,0 +1,189 @@
+---
+title: "Framing effect analysis"
+author: "Ashish"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    theme: paper
+---
+Initialization
+===
+```{r, message=FALSE}
+rm(list=ls())
+
+library(psych)
+library(lmerTest)
+
+library(sjPlot)
+library(here)
+library(tidyverse)
+theme_set(theme_bw())
+```
+
+```{r, eval=FALSE}
+library(tidylog)
+```
+
+
+Preprocessing
+===
+
+Functions
+---
+```{r}
+logit2prob <- function(logit){
+  odds <- exp(logit)
+  prob <- odds / (1 + odds)
+  return(prob)
+}
+```
+
+Read data
+---
+```{r, message=FALSE}
+filepath <- "data/proc/ds.jeanroisse.alexithymia.csv"
+df_raw <- read_csv(here(filepath))
+```
+
+Process data
+---
+
+Create processed dataframe
+```{r}
+df_proc <- df_raw %>% 
+   # -- remove people who clearly faked age -- #
+  mutate(age = ifelse(age > 18, age, NA)) 
+```
+
+Create PAQ dataframe
+```{r, message=FALSE}
+df_paq <- df_proc %>% 
+  select(id, starts_with("paq")) %>% 
+  pivot_longer(-id) %>% 
+  group_by(id) %>% 
+  summarize(paq = mean(value))
+```
+
+Create framing effect dataframes  
+
+ - 0 = safe
+ - 1 = risk
+```{r}
+df_framing_w <- df_proc %>% 
+  select(id, matches("[gl]t$"))
+
+df_framing_l <- df_proc %>% 
+  select(id, matches("[gl]t$")) %>% 
+  pivot_longer(-id, names_to = "vignette", values_to = "choice") %>% 
+  filter(!is.na(choice)) %>% 
+  mutate(frame = case_when(
+    str_detect(vignette, "gt$") ~ "gain",
+    str_detect(vignette, "lt$") ~ "loss"
+  )) %>% 
+  mutate(gov = case_when(
+    str_detect(vignette, "^c_") ~ "county",
+    TRUE ~ "municipal"
+  )) %>% 
+  mutate(vignette = str_replace(vignette, "^c_", "")) %>% 
+  # -- keep only municipal politicians -- #
+  filter(gov == "municipal")
+```
+
+Check number of trials per participant
+```{r}
+df_framing_l %>% 
+  group_by(id) %>% 
+  summarize(n = n()) %>% 
+  arrange(desc(n))
+
+df_framing_l %>% 
+  group_by(id, gov) %>% 
+  summarize(n = n()) %>% 
+  summarize(n = n()) %>% 
+  arrange(desc(n))
+    
+```
+
+
+```{r, echo=FALSE}
+# ------ End Preprocessing ------ #
+# ----- Run all chunks above -----#
+```
+
+Reliability
+===
+```{r}
+df_proc %>% 
+  select(starts_with("paq")) %>% 
+  psych::alpha(.)
+```
+
+Distributions
+===
+```{r}
+df_paq$paq %>% qplot(binwidth=.25)
+```
+
+
+H1
+===
+H1: Participants are risk-seeking in the gain treatment and risk-averse in the loss treatment.
+```{r}
+fit <- df_framing_l %>% 
+  glmer(choice ~ frame + (1|id) + (1|vignette) ,family = "binomial", .)
+summary(fit)
+coef(fit)$id[["frameloss"]][[1]]  # odds ratio
+logit2prob(coef(fit)$id[["frameloss"]][[1]])  # pr of risky in loss frame
+```
+> Supported
+
+H2 
+===
+H2: Alexithymia is positively associated with risk-taking behavior (i.e., lower levels of emotional awareness hamper participants’ ability to become emotionally aware of the issues and dilemmas posed by framing, hence making them more inclined to taking risks).
+
+```{r}
+fit <- df_framing_l %>% 
+  left_join(df_paq) %>% 
+  glmer(choice ~ paq + (1|id) + (1|vignette) ,family = "binomial", .)
+summary(fit)
+exp(coef(fit)$id[["paq"]][[1]])  # odds ratio
+logit2prob(coef(fit)$id[["paq"]][[1]])  # pr risky as function of alx
+
+```
+> Not supported
+
+H3 
+===
+H3: Alexithymia is negatively associated with framing effects (i.e., higher levels of emotional awareness make participants more inclined to respond to the framed situations and hence more susceptible to framing effects.
+```{r}
+fit <- df_framing_l %>% 
+  left_join(df_paq) %>% 
+  glmer(choice ~ paq*frame + (1|id) + (1|vignette) ,family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int")
+```
+> Marginally signifciant support
+
+
+Secondary analyses
+===
+
+Moderation by domain
+```{r}
+
+
+```
+
+
+
+Session Info
+===
+```{r}
+sessionInfo()
+```
+
