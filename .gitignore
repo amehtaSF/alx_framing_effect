@@ -63,3 +63,4 @@
 
 # Keep codebooks
 !**/*codebook**
+.Rproj.user
