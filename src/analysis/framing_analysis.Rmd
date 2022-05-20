@@ -57,16 +57,24 @@ Create processed dataframe
 ```{r}
 df_proc <- df_raw %>% 
    # -- remove people who clearly faked age -- #
-  mutate(age = ifelse(age > 18, age, NA)) 
+  mutate(age = ifelse(age > 18, age, NA)) %>% 
+  # -- factorize -- #
+  mutate(gender = as.factor(gender)) %>% 
+  # -- make key issues vars -- #
+  mutate(keyIssue_digitization = ifelse(Key_issues_Norway == 5, 1, 0)) %>% 
+  mutate(keyIssue_econ = ifelse(Key_issues_Norway == 10, 1, 0)) %>% 
+  mutate(keyIssue_employ = ifelse(Key_issues_Norway == 11, 1, 0)) 
 ```
 
-Create PAQ dataframe
+Create individual difference dataframe
 ```{r, message=FALSE}
-df_paq <- df_proc %>% 
+df_inddiff <- df_proc %>% 
   select(id, starts_with("paq")) %>% 
   pivot_longer(-id) %>% 
   group_by(id) %>% 
-  summarize(paq = mean(value))
+  summarize(paq = mean(value))  %>% 
+  # -- re-add indiv diff vars -- #
+  left_join(df_proc %>% select(id, age, gender, matches("keyIssue")))
 ```
 
 Create framing effect dataframes  
@@ -95,7 +103,17 @@ df_framing_l <- df_proc %>%
   # -- set econ as reference level -- #
   mutate(vignette = relevel(as.factor(vignette), "econ")) %>% 
   # -- keep only municipal politicians -- #
-  filter(gov == "municipal")
+  filter(gov == "municipal") %>% 
+  # -- add key issue binary var -- #
+  left_join(df_proc %>% select(id, age, gender, matches("keyIssue"))) %>% 
+  mutate(keyIssue = case_when(
+    vignette == "dp" & keyIssue_digitization == 1 ~ 1,
+    vignette == "dpecon" & keyIssue_digitization == 1 ~ 1,
+    vignette == "econ" & keyIssue_employ == 1 ~ 1,
+    vignette == "dpecon"& keyIssue_employ == 1 ~ 1,
+    TRUE ~ 0
+  )) %>% 
+  select(-matches("keyIssue_"))
 ```
 
 Check number of trials per participant
@@ -130,7 +148,7 @@ df_proc %>%
 Distributions
 ===
 ```{r}
-df_paq$paq %>% qplot(binwidth=.25)
+df_inddiff$paq %>% qplot(binwidth=.25)
 ```
 
 
@@ -152,7 +170,7 @@ H2: Alexithymia is positively associated with risk-taking behavior (i.e., lower 
 
 ```{r}
 fit <- df_framing_l %>% 
-  left_join(df_paq) %>% 
+  left_join(df_inddiff) %>% 
   glmer(choice ~ paq + (1|id) + (1|vignette) ,family = "binomial", .)
 summary(fit)
 exp(coef(fit)$id[["paq"]][[1]])  # odds ratio
@@ -166,7 +184,7 @@ H3
 H3: Alexithymia is negatively associated with framing effects (i.e., higher levels of emotional awareness make participants more inclined to respond to the framed situations and hence more susceptible to framing effects.
 ```{r}
 fit <- df_framing_l %>% 
-  left_join(df_paq) %>% 
+  left_join(df_inddiff) %>% 
   glmer(choice ~ paq*frame + (1|id) + (1|vignette) ,family = "binomial", .)
 summary(fit)
 plot_model(fit, type = "int", terms="paq [all]")
@@ -177,32 +195,108 @@ plot_model(fit, type = "int", terms="paq [all]")
 Secondary analyses
 ===
 
+Frame x key issue
 ```{r}
 fit <- df_framing_l %>% 
   mutate_at(vars(frame, vignette), as.factor) %>% 
-  left_join(df_paq) %>% 
+  glm(choice ~ frame*keyIssue,family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int")
+```
+> The data are trending in the direction that if the vignette refers to what politicians see as a key issue, then the framing effect is bigger. However, this is not even close to significance. 
+
+Frame x key issue (no dpecon)
+```{r}
+fit <- df_framing_l %>% 
+  mutate_at(vars(frame, vignette), as.factor) %>% 
+  filter(vignette != "dpecon") %>% 
+  glm(choice ~ frame*keyIssue,family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int")
+```
+> Here I removed the dpecon vignettes since they are hard to interpret. Now it definitely seems like there is a larger framing effect if you see the vignette as pertaining to the key issue for Norway. This is super interesting because you could say that the people who care the most about an issue are the ones least equipped to make decisions about that issue.
+
+Frame x vignette
+```{r}
+fit <- df_framing_l %>% 
+  mutate_at(vars(frame, vignette), as.factor) %>% 
   glm(choice ~ frame*vignette,family = "binomial", .)
 summary(fit)
-plot_model(fit, type = "int", terms="paq [all]")
+plot_model(fit, type = "int")
 ```
-> There is significantly less of a framing effect in conditions which involve data privacy than in conditions which involve jobs saved and lost. The econ condition looks similar to how the traditional Asian Disease Problem result from Kahneman and Tversky. I wonder whether people/politicians view a data privacy breach in terms of how many people's information was unsecured or whether people think of privacy breaches simply in terms of whether or not it occurred. This may be different than something like jobs lost where the quantity of jobs lost is more salient.
+> There is significantly less of a framing effect in conditions which involve data privacy than in conditions which involve jobs saved and lost. The econ condition looks similar to how the traditional Asian Disease Problem result from Kahneman and Tversky. I wonder whether people/politicians view a data privacy breach in terms of how many people's information was unsecured or whether people think of privacy breaches simply in terms of whether or not it occurred. This may be different than something like jobs lost where the quantity of jobs lost is more salient. Also, given the previous findings, it might mean that people care less about data breaches than jobs lost which is why you see less framing effect.
 
+Frame x age
+```{r}
+fit <- df_framing_l %>% 
+  left_join(df_inddiff) %>% 
+  mutate_at(vars(frame, vignette), as.factor) %>% 
+  glm(choice ~ frame*age, family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int")
+```
+
+Frame x gender
+```{r}
+fit <- df_framing_l %>% 
+  left_join(df_inddiff) %>% 
+  filter(gender == 0 | gender == 1) %>% 
+  mutate_at(vars(frame, vignette), as.factor) %>% 
+  glm(choice ~ frame*gender, family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int")
+```
+> Trending towards larger framing effect for women, but not significant.
+
+PAQ interactions
+---
 Three way interaction: PAQ x Frame x Vignette
 ```{r}
-
 df_framing_l %>% 
-  left_join(df_paq) %>% 
+  left_join(df_inddiff) %>% 
   group_by(id, paq, frame, vignette) %>% 
   summarize(n = n()) %>% 
   arrange(desc(n))
 fit <- df_framing_l %>% 
   mutate_at(vars(frame, vignette), as.factor) %>% 
-  left_join(df_paq) %>% 
+  left_join(df_inddiff) %>% 
   glm(choice ~ paq*frame*vignette,family = "binomial", .)
 summary(fit)
 plot_model(fit, type = "int", terms="paq [all]")
 ```
 > No three-way interaction.
+
+
+```{r}
+fit <- df_framing_l %>% 
+  left_join(df_inddiff) %>% 
+  mutate_at(vars(paq, age), scale) %>% 
+  glmer(choice ~ paq*frame*age + (1|id) + (1|vignette) ,family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int", terms="paq [all]")
+```
+> no age moderation
+
+```{r}
+fit <- df_framing_l %>% 
+  left_join(df_inddiff) %>% 
+  mutate_at(vars(paq, age), scale) %>% 
+  glmer(choice ~ paq*frame*gender + (1|id) + (1|vignette) ,family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int", terms="paq [all]")
+```
+> no gender three way moderation
+
+Frame x key issue x PAQ (no dpecon)
+```{r}
+fit <- df_framing_l %>% 
+  left_join(df_inddiff) %>% 
+  filter(vignette != "dpecon") %>% 
+  glm(choice ~ frame*keyIssue*paq,family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int")
+```
+> No three way interaction with whether it's a key issue. Frankly, there's just not enough power for this anyway.
 
 
 Session Info
