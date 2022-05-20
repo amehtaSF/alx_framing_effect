@@ -89,7 +89,11 @@ df_framing_l <- df_proc %>%
     str_detect(vignette, "^c_") ~ "county",
     TRUE ~ "municipal"
   )) %>% 
+  # -- reformat vignette labels -- #
   mutate(vignette = str_replace(vignette, "^c_", "")) %>% 
+  mutate(vignette = str_replace(vignette, "[gl]t$", "")) %>% 
+  # -- set econ as reference level -- #
+  mutate(vignette = relevel(as.factor(vignette), "econ")) %>% 
   # -- keep only municipal politicians -- #
   filter(gov == "municipal")
 ```
@@ -165,7 +169,7 @@ fit <- df_framing_l %>%
   left_join(df_paq) %>% 
   glmer(choice ~ paq*frame + (1|id) + (1|vignette) ,family = "binomial", .)
 summary(fit)
-plot_model(fit, type = "int")
+plot_model(fit, type = "int", terms="paq [all]")
 ```
 > Marginally signifciant support
 
@@ -173,12 +177,32 @@ plot_model(fit, type = "int")
 Secondary analyses
 ===
 
-Moderation by domain
+```{r}
+fit <- df_framing_l %>% 
+  mutate_at(vars(frame, vignette), as.factor) %>% 
+  left_join(df_paq) %>% 
+  glm(choice ~ frame*vignette,family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int", terms="paq [all]")
+```
+> There is significantly less of a framing effect in conditions which involve data privacy than in conditions which involve jobs saved and lost. The econ condition looks similar to how the traditional Asian Disease Problem result from Kahneman and Tversky. I wonder whether people/politicians view a data privacy breach in terms of how many people's information was unsecured or whether people think of privacy breaches simply in terms of whether or not it occurred. This may be different than something like jobs lost where the quantity of jobs lost is more salient.
+
+Three way interaction: PAQ x Frame x Vignette
 ```{r}
 
-
+df_framing_l %>% 
+  left_join(df_paq) %>% 
+  group_by(id, paq, frame, vignette) %>% 
+  summarize(n = n()) %>% 
+  arrange(desc(n))
+fit <- df_framing_l %>% 
+  mutate_at(vars(frame, vignette), as.factor) %>% 
+  left_join(df_paq) %>% 
+  glm(choice ~ paq*frame*vignette,family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int", terms="paq [all]")
 ```
-
+> No three-way interaction.
 
 
 Session Info
