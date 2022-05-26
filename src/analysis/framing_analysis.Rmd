@@ -63,7 +63,8 @@ df_proc <- df_raw %>%
   # -- make key issues vars -- #
   mutate(keyIssue_digitization = ifelse(Key_issues_Norway == 5, 1, 0)) %>% 
   mutate(keyIssue_econ = ifelse(Key_issues_Norway == 10, 1, 0)) %>% 
-  mutate(keyIssue_employ = ifelse(Key_issues_Norway == 11, 1, 0)) 
+  mutate(keyIssue_employ = ifelse(Key_issues_Norway == 11, 1, 0)) %>% 
+  mutate(keyIssue_cyber = ifelse(Key_issues_Norway == 4, 1, 0)) 
 ```
 
 Create individual difference dataframe
@@ -157,12 +158,61 @@ H1
 H1: Participants are risk-seeking in the gain treatment and risk-averse in the loss treatment.
 ```{r}
 fit <- df_framing_l %>% 
-  glmer(choice ~ frame + (1|id) + (1|vignette) ,family = "binomial", .)
+  glmer(choice ~ frame + (1|id) + (1|vignette), family = "binomial", .)
 summary(fit)
-coef(fit)$id[["frameloss"]][[1]]  # odds ratio
 logit2prob(coef(fit)$id[["frameloss"]][[1]])  # pr of risky in loss frame
 ```
 > Supported
+
+
+Separate models per vignette
+```{r}
+fit <- df_framing_l %>% 
+  filter(vignette == "dp") %>% 
+  left_join(df_inddiff) %>% 
+  glm(choice ~ frame, family = "binomial", .)
+summary(fit)
+logit2prob(coef(fit)[["frameloss"]][[1]])  # pr of risky in loss frame
+df_framing_l %>% 
+  filter(vignette == "dp") %>% 
+  ggplot(aes(x = frame, y = choice)) + 
+  stat_summary()
+```
+
+```{r}
+fit <- df_framing_l %>% 
+  filter(vignette == "dpecon") %>% 
+  left_join(df_inddiff) %>% 
+  glm(choice ~ frame, family = "binomial", .)
+summary(fit)
+logit2prob(coef(fit)[["frameloss"]][[1]])  # pr of risky in loss frame
+df_framing_l %>% 
+  filter(vignette == "dpecon") %>% 
+  ggplot(aes(x = frame, y = choice)) + 
+  stat_summary()
+```
+
+```{r}
+fit <- df_framing_l %>% 
+  filter(vignette == "econ") %>% 
+  left_join(df_inddiff) %>% 
+  glm(choice ~ frame, family = "binomial", .)
+summary(fit)
+logit2prob(coef(fit)[["frameloss"]][[1]])  # pr of risky in loss frame
+df_framing_l %>% 
+  filter(vignette == "econ") %>% 
+  ggplot(aes(x = frame, y = choice)) + 
+  stat_summary()
+```
+
+```{r}
+df_framing_l %>% 
+  ggplot(aes(x = frame, y = choice)) + 
+  stat_summary() + 
+  facet_grid(~vignette)
+```
+
+
 
 H2 
 ===
@@ -188,9 +238,57 @@ fit <- df_framing_l %>%
   glmer(choice ~ paq*frame + (1|id) + (1|vignette) ,family = "binomial", .)
 summary(fit)
 plot_model(fit, type = "int", terms="paq [all]")
+
 ```
 > Marginally signifciant support
 
+```{r}
+fit <- df_framing_l %>% 
+  filter(vignette == "dp") %>% 
+  left_join(df_inddiff) %>% 
+  glm(choice ~ paq*frame, family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int", terms="paq [all]")
+
+df_framing_l %>% 
+  filter(vignette == "dp") %>% 
+  left_join(df_inddiff) %>% 
+  ggplot(aes(x = paq, y = choice, color = frame)) + 
+  geom_smooth()
+```
+> No significant interaction
+
+```{r}
+fit <- df_framing_l %>% 
+  filter(vignette == "dpecon") %>% 
+  left_join(df_inddiff) %>% 
+  glm(choice ~ paq*frame, family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int", terms="paq [all]")
+
+df_framing_l %>% 
+  filter(vignette == "dpecon") %>% 
+  left_join(df_inddiff) %>% 
+  ggplot(aes(x = paq, y = choice, color = frame)) + 
+  geom_smooth()
+```
+> Significant interaction such that high alexithymia has reduced framing effect
+
+```{r}
+fit <- df_framing_l %>% 
+  filter(vignette == "econ") %>% 
+  left_join(df_inddiff) %>% 
+  glm(choice ~ paq*frame, family = "binomial", .)
+summary(fit)
+plot_model(fit, type = "int", terms="paq [all]")
+
+df_framing_l %>% 
+  filter(vignette == "econ") %>% 
+  left_join(df_inddiff) %>% 
+  ggplot(aes(x = paq, y = choice, color = frame)) + 
+  geom_smooth()
+```
+> No significant interaction
 
 Secondary analyses
 ===
@@ -261,6 +359,10 @@ fit <- df_framing_l %>%
   mutate_at(vars(frame, vignette), as.factor) %>% 
   left_join(df_inddiff) %>% 
   glm(choice ~ paq*frame*vignette,family = "binomial", .)
+fit <- df_framing_l %>% 
+  mutate_at(vars(frame, vignette), as.factor) %>% 
+  left_join(df_inddiff) %>% 
+  glm(choice ~ frame*vignette*paq,family = "binomial", .)
 summary(fit)
 plot_model(fit, type = "int", terms="paq [all]")
 ```
@@ -291,12 +393,50 @@ Frame x key issue x PAQ (no dpecon)
 ```{r}
 fit <- df_framing_l %>% 
   left_join(df_inddiff) %>% 
-  filter(vignette != "dpecon") %>% 
+  filter(vignette != "dpecon") %>%
   glm(choice ~ frame*keyIssue*paq,family = "binomial", .)
 summary(fit)
 plot_model(fit, type = "int")
 ```
 > No three way interaction with whether it's a key issue. Frankly, there's just not enough power for this anyway.
+
+Alexithymia predicting different key issues
+```{r}
+df_inddiff %>% 
+  glm(keyIssue_digitization ~ paq, ., family = "binomial") %>% 
+  summary
+df_inddiff %>% 
+  ggplot(aes(x = paq, y = keyIssue_digitization)) + 
+  geom_smooth()
+```
+
+```{r}
+df_inddiff %>% 
+  glm(keyIssue_econ ~ paq, ., family = "binomial") %>% 
+  summary
+df_inddiff %>% 
+  ggplot(aes(x = paq, y = keyIssue_econ)) + 
+  geom_smooth()
+```
+
+```{r}
+df_inddiff %>% 
+  glm(keyIssue_employ ~ paq, ., family = "binomial") %>% 
+  summary
+df_inddiff %>% 
+  ggplot(aes(x = paq, y = keyIssue_employ)) + 
+  geom_smooth()
+```
+
+```{r}
+df_inddiff %>% 
+  glm(keyIssue_cyber ~ paq, ., family = "binomial") %>% 
+  summary
+df_inddiff %>% 
+  ggplot(aes(x = paq, y = keyIssue_cyber)) + 
+  geom_smooth()
+```
+
 
 
 Session Info
